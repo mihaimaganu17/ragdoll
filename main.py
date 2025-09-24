@@ -6,6 +6,7 @@ from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.document_loaders import WebBaseLoader
+from langchain_core.prompts import PromptTemplate
 
 
 def loader():
@@ -57,7 +58,24 @@ def split(documents):
     return all_splits
 
 
+def base_prompt():
+    #prompt = PromptTemplate.from_template("""
+#You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+#Question: {question} 
+#Context: {context} 
+#Answer:
+#    """)
 
+    from langchain import hub
+    prompt = hub.pull("rlm/rag-prompt", api_url="https://api.smith.langchain.com")
+
+    example_messages = prompt.invoke(
+        {"context": "(context goes here)", "question": "(question goes here)"}
+    ).to_messages()
+
+    assert len(example_messages) == 1
+    print(example_messages[0].content)
+    return prompt
 
 
 def main():
@@ -86,6 +104,9 @@ def main():
     # Given an input query, we can then use vector search to retrieve relevant documents.
     doc_ids = vector_store.add_documents(documents=all_splits)
     print(doc_ids[:3])
+
+    # Initialize the base prompt
+    prompt = base_prompt()
 
 
 if __name__ == "__main__":
