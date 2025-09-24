@@ -1,0 +1,13 @@
+[project]
+name = "ragdoll"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=0.3.27",
+    "langchain-community>=0.3.29",
+    "langchain-openai>=0.3.33",
+    "langchain-text-splitters>=0.3.11",
+    "langgraph>=0.6.7",
+]
