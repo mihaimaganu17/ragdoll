@@ -57,6 +57,9 @@ def split(documents):
     return all_splits
 
 
+
+
+
 def main():
     if not os.environ.get("OPENAI_API_KEY"):
         os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
@@ -64,18 +67,26 @@ def main():
 
     # Initialize the model to be used
     llm = init_chat_model("gpt-4o-mini", model_provider="openai")
-    # Initialize the interface for working with the embedding model
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-    # Initialize the vector store for the embeddings
-    vector_store = InMemoryVectorStore(embeddings)
 
     # Load the document we want to search in
     docs = loader().load()
     assert len(docs) == 1
     print(f"Total characters: {len(docs[0].page_content)}")
 
-    split(docs)
-    
+    # Split the document into smaller chunks, such that it is easier for the context window of the
+    # model.
+    all_splits = split(docs)
+
+    # Store the splited text chunks into the vector store
+    # Initialize the interface for working with the embedding model
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+    # Initialize the vector store for the embeddings
+    vector_store = InMemoryVectorStore(embeddings)
+    # Embed the contents of each document and store them in the vector store.
+    # Given an input query, we can then use vector search to retrieve relevant documents.
+    doc_ids = vector_store.add_documents(documents=all_splits)
+    print(doc_ids[:3])
+
 
 if __name__ == "__main__":
     main()
