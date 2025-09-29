@@ -11,6 +11,9 @@ from langchain_core.documents import Document
 from typing_extensions import List, TypedDict
 
 
+# Initialize the LLM to be used
+llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+
 def loader():
     # We load the HTML document using a WebBaseLoader to convert it to a langchain Document and
     # BeatifulSoup to parse the text.
@@ -56,6 +59,21 @@ def split(documents):
         ],
     )
     all_splits = text_splitter.split_documents(documents)
+
+    # Use labels to tag the location of the split into the document, using thirds
+    total_documents = len(all_splits)
+    third = total_documents // 3
+
+    for i, document in enumerate(all_splits):
+        if i < third:
+            document.metadata["section"] = "beginning"
+        elif i < 2 * third:
+            document.metadata["section"] = "middle"
+        else:
+            document.metadata["section"] = "end"
+
+    print(all_splits[0].metadata)
+
     assert len(all_splits) == 63
     return all_splits
 
@@ -111,18 +129,44 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 # Initialize the vector store for the embeddings
 vector_store = InMemoryVectorStore(embeddings)
 
+from typing import Literal
+from typing_extensions import Annotated
+
+
+class Search(TypedDict):
+    """Search query."""
+    query: Annotated[str, "Search query to run."]
+    section: Annotated[
+        Literal["beginning", "middle", "end"],
+        "Section to query."
+    ]
+
+
 # State controls what data is input to the application, trasferred between steps and output by
 # the application. For a simple RAG application, we can just keep track of the input question,
 # retrieved context and generated answer.
 class State(TypedDict):
     question: str
+    query: Search
     context: List[Document]
     answer: str
 
 
+
+def analyze_query(state: State):
+    # Use structured output
+    structured_llm = llm.with_structured_output(Search)
+    query = structured_llm.invoke(state["question"])
+    return {"query": query}
+
+
 # Retrieve the similar records with the question from the passed state
 def retrieve(state: State):
-    retrieved_docs = vector_store.similarity_search(state["question"])
+    query = state["query"]
+    retrieved_docs = vector_store.similarity_search(
+        query["query"],
+        filter=lambda doc: doc.metadata.get("section") == query["section"],
+    )
     return {"context": retrieved_docs}
 
 
@@ -134,8 +178,7 @@ def generate(state: State):
     prompt = base_prompt()
     # Replace the question and the retrieved context in the prompt
     messages = prompt.invoke({"question": state["question"], "context": docs_content})
-    # Call the LLM to get the response
-    llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+    
     response = llm.invoke(messages)
     return { "answer": response.content }
 
@@ -145,9 +188,9 @@ from langgraph.graph import START, StateGraph
 # We create a graph with the retrieve and generation steps into a single sequence and then we
 # compile it. First we add the 2 Nodes as application steps in a sequence
 # Is 'StateGraph' an automaton?
-graph_builder = StateGraph(State).add_sequence([retrieve, generate])
+graph_builder = StateGraph(State).add_sequence([analyze_query, retrieve, generate])
 # We add the start and connect it to the first node "retrieve"
-graph_builder.add_edge(START, "retrieve")
+graph_builder.add_edge(START, "analyze_query")
 # We compile the graph
 graph = graph_builder.compile()
 
@@ -159,7 +202,7 @@ if __name__ == "__main__":
     main()
 
     # Invoke
-    result = graph.invoke({"question": "What is Task Decomposition"})
+    result = graph.invoke({"question": "What does the end of the post say about Task Decomposition"})
     print(f"Context: {result["context"]}\n\n")
     print(f"Answer: {result['answer']}")
 
@@ -167,12 +210,12 @@ if __name__ == "__main__":
     # result = await graph.ainvoke(...)
 
     # Stream steps
-    for step in graph.stream({"question": "What is Task Decomposition?"}, stream_mode="updates"):
-        print(f"{step}\n\n-------\n")
+    #for step in graph.stream({"question": "What is Task Decomposition?"}, stream_mode="updates"):
+    #    print(f"{step}\n\n-------\n")
 
     # Async streaming
     # async for step in graph.astream(...):
 
     # Stream tokens
-    for message, metadata in graph.stream({"question": "What is Task Decomposition?"}, stream_mode="messages"):
-        print(message.content, end="|")
+    # for message, metadata in graph.stream({"question": "What is Task Decomposition?"}, stream_mode="messages"):
+    #    print(message.content, end="|")
