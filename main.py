@@ -7,6 +7,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_core.prompts import PromptTemplate
+from langchain_core.documents import Document
+from typing_extensions import List, TypedDict
 
 
 def loader():
@@ -59,13 +61,6 @@ def split(documents):
 
 
 def base_prompt():
-    #prompt = PromptTemplate.from_template("""
-#You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
-#Question: {question} 
-#Context: {context} 
-#Answer:
-#    """)
-
     from langchain import hub
     prompt = hub.pull("rlm/rag-prompt", api_url="https://api.smith.langchain.com")
 
@@ -74,7 +69,6 @@ def base_prompt():
     ).to_messages()
 
     assert len(example_messages) == 1
-    print(example_messages[0].content)
     return prompt
 
 
@@ -96,18 +90,89 @@ def main():
     all_splits = split(docs)
 
     # Store the splited text chunks into the vector store
-    # Initialize the interface for working with the embedding model
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-    # Initialize the vector store for the embeddings
-    vector_store = InMemoryVectorStore(embeddings)
     # Embed the contents of each document and store them in the vector store.
     # Given an input query, we can then use vector search to retrieve relevant documents.
     doc_ids = vector_store.add_documents(documents=all_splits)
-    print(doc_ids[:3])
 
     # Initialize the base prompt
     prompt = base_prompt()
 
+    # We use LangGraph to to tie together the retrievel and generation steps for the RAG into a
+    # single application.
+    # To use LangGraph, we need to define 3 things:
+    # 1. The state of our application
+    # 2. The nodes of our application (application steps)
+    # 3. The "control flow" of our application (ordering the steps)
+
+    
+
+# Initialize the interface for working with the embedding model
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+# Initialize the vector store for the embeddings
+vector_store = InMemoryVectorStore(embeddings)
+
+# State controls what data is input to the application, trasferred between steps and output by
+# the application. For a simple RAG application, we can just keep track of the input question,
+# retrieved context and generated answer.
+class State(TypedDict):
+    question: str
+    context: List[Document]
+    answer: str
+
+
+# Retrieve the similar records with the question from the passed state
+def retrieve(state: State):
+    retrieved_docs = vector_store.similarity_search(state["question"])
+    return {"context": retrieved_docs}
+
+
+# The generation step formats the retrieved context and original question into a prompt for the chat
+# model.
+def generate(state: State):
+    # Join all the documents in the state's context
+    docs_content = "\n\n".join(doc.page_content for doc in state["context"])
+    prompt = base_prompt()
+    # Replace the question and the retrieved context in the prompt
+    messages = prompt.invoke({"question": state["question"], "context": docs_content})
+    # Call the LLM to get the response
+    llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+    response = llm.invoke(messages)
+    return { "answer": response.content }
+
+
+from langgraph.graph import START, StateGraph
+
+# We create a graph with the retrieve and generation steps into a single sequence and then we
+# compile it. First we add the 2 Nodes as application steps in a sequence
+# Is 'StateGraph' an automaton?
+graph_builder = StateGraph(State).add_sequence([retrieve, generate])
+# We add the start and connect it to the first node "retrieve"
+graph_builder.add_edge(START, "retrieve")
+# We compile the graph
+graph = graph_builder.compile()
+
+# Save the graph as a .PNG
+with open("graph.png", "wb") as g:
+    g.write(graph.get_graph().draw_mermaid_png())
 
 if __name__ == "__main__":
     main()
+
+    # Invoke
+    result = graph.invoke({"question": "What is Task Decomposition"})
+    print(f"Context: {result["context"]}\n\n")
+    print(f"Answer: {result['answer']}")
+
+    # Async invocations:
+    # result = await graph.ainvoke(...)
+
+    # Stream steps
+    for step in graph.stream({"question": "What is Task Decomposition?"}, stream_mode="updates"):
+        print(f"{step}\n\n-------\n")
+
+    # Async streaming
+    # async for step in graph.astream(...):
+
+    # Stream tokens
+    for message, metadata in graph.stream({"question": "What is Task Decomposition?"}, stream_mode="messages"):
+        print(message.content, end="|")

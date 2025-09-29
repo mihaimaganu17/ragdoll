@@ -6,10 +6,15 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "bs4>=0.0.2",
+    "graphviz>=0.21",
+    "ipython>=9.5.0",
     "langchain>=0.3.27",
     "langchain-chroma>=0.2.6",
     "langchain-community>=0.3.29",
     "langchain-openai>=0.3.33",
     "langchain-text-splitters>=0.3.11",
     "langgraph>=0.6.7",
+    "pillow>=11.3.0",
+    "pipx>=1.7.1",
+    "typing-extensions>=4.15.0",
 ]
