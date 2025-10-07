@@ -187,5 +187,14 @@ graph = graph_builder.compile()
 with open("conv_rag.png", "wb") as g:
     g.write(graph.get_graph().draw_mermaid_png())
 
+input_message = "What is Task Decomposition?"
+
+for step in graph.stream(
+    {"messages": [{"role": "user", "content": input_message}]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+
+
 if __name__ == "__main__":
     main()
