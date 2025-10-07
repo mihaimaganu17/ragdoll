@@ -162,6 +162,30 @@ def generate(state: MessagesState):
     response = llm.invoke(prompt)
     return {"messages": [response]}
 
+from langgraph.graph import END
+from langgraph.prebuilt import tools_condition
+
+graph_builder.add_node(query_or_respond)
+graph_builder.add_node(tools)
+graph_builder.add_node(generate)
+
+graph_builder.set_entry_point("query_or_respond")
+graph_builder.add_conditional_edges(
+    "query_or_respond",
+    # Standard conditional logic for ReAct-style agents: if the last AI message contains tool calls,
+    # route to the tool execution node; otherwise, end the workflow
+    tools_condition,
+    {END: END, "tools": "tools"},
+)
+
+graph_builder.add_edge("tools", "generate")
+graph_builder.add_edge("generate", END)
+# We compile the graph
+graph = graph_builder.compile()
+
+# Save the graph as a .PNG
+with open("conv_rag.png", "wb") as g:
+    g.write(graph.get_graph().draw_mermaid_png())
 
 if __name__ == "__main__":
     main()
