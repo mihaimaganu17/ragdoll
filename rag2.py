@@ -213,5 +213,9 @@ for step in graph.stream(
 ):
     step["messages"][-1].pretty_print()
 
+
+print(list(graph.get_state_history(config)))
+
+
 if __name__ == "__main__":
     main()
