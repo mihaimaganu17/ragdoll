@@ -180,8 +180,16 @@ graph_builder.add_conditional_edges(
 
 graph_builder.add_edge("tools", "generate")
 graph_builder.add_edge("generate", END)
+
+
+# Add a persistence layer through a checkpoint
+from langgraph.checkpoint.memory import MemorySaver
+memory = MemorySaver()
 # We compile the graph
-graph = graph_builder.compile()
+graph = graph_builder.compile(checkpointer=memory)
+
+# Specify an ID for the thread
+config = {"configurable": {"thread_id": "abc123"}}
 
 # Save the graph as a .PNG
 with open("conv_rag.png", "wb") as g:
@@ -192,9 +200,18 @@ input_message = "What is Task Decomposition?"
 for step in graph.stream(
     {"messages": [{"role": "user", "content": input_message}]},
     stream_mode="values",
+    config=config,
 ):
     step["messages"][-1].pretty_print()
 
+input_message = "Can you look up some common ways of doing it?"
+
+for step in graph.stream(
+    {"messages": [{"role": "user", "content": input_message}]},
+    stream_mode="values",
+    config=config,
+):
+    step["messages"][-1].pretty_print()
 
 if __name__ == "__main__":
     main()
