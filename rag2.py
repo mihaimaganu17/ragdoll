@@ -95,5 +95,73 @@ from langgraph.graph import MessagesState, StateGraph
 
 graph_builder = StateGraph(MessagesState)
 
+from langchain_core.tools import tool
+
+@tool(response_format="content_and_artifact")
+def retrieve(query: str):
+    """Retrieve information related to a query from the vector store."""
+    retrieved_docs = vector_store.similarity_search(query, k=2)
+    serialized = "\n\n".join(
+        (f"Source: {doc.metadata}\nContent: {doc.page_content}")
+        for doc in retrieved_docs
+    )
+    return serialized, retrieved_docs
+
+# Step 1: Generate an assistant message that may include a tool-call to be sent.
+def query_or_respond(state: MessagesState):
+    """Generate tool call for retrieval or reponse."""
+    # Provide available tools for the LLM to call
+    llm_with_tools = llm.bind_tools([retrieve])
+    # Invoke the LLM with previous messages
+    response = llm_with_tools.invoke(state["messages"])
+    # MessageState appends messages to state instead of overwriting
+    return {"messages": [response]}
+
+
+from langgraph.prebuilt import ToolNode
+# Step 2: Create a tool node to execute the retrieval.
+tools = ToolNode([retrieve])
+
+# Step 3: Generte a response using retrieved content
+def generate(state: MessagesState):
+    """Generate the answer based on previous messages state"""
+    # Get generated ToolMessages
+    recent_tool_messages = []
+    for message in reversed(state["messages"]):
+        if message.type == "tool":
+            recent_tool_messages.append(message)
+        else:
+            break
+
+    # Revert the tools messages back such that we start with the first one
+    tool_messages = recent_tool_messages[::-1]
+
+    # Format the docs into a prompt
+    docs_content = "\n\n".join(doc.content for doc in tool_messages)
+    system_message_content = (
+        "You are an assistant for question-answering tasks."
+        "Use the following pieces of retrieved context to answer "
+        "the question. If you don't know the answer, say that you "
+        "don't know. Use three sentences maximum and keep the "
+        "answer concise.\n\n"
+        f"{docs_content}"
+    )
+
+    # Collect all the conversations message from either the user role, system role or assitant
+    # messages which are not tool calls.
+    conversation_messages = [
+        message for message in state["messages"] if message.type in ("human", "system")
+        or (message.type == "ai" and not message.tool_calls)
+    ]
+
+    from langchain_core.messages import SystemMessage
+    # Create an entire new prompt with the system message content and the conversation messages
+    prompt = [SystemMessage(system_message_content)] + conversation_messages
+
+    # prompt the LLM
+    response = llm.invoke(prompt)
+    return {"messages": [response]}
+
+
 if __name__ == "__main__":
     main()
