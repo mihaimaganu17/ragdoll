@@ -33,4 +33,8 @@ config = {"configurable": {"thread_id": uuid.uuid4()}}
 result = graph.invoke({"text": "You either create or die"}, config=config)
 
 print(result['__interrupt__'])
+# The Command primitive resumes execution when it is supplied via invoke.
+# At this point the graph resumes execution from the beginning of the node containing the
+# `interrupt` call, but this time the interrupt function will return the value provided in 
+# Command(resume=value) rather than pausing again.
 print(graph.invoke(Command(resume="Edited_text"), config=config))
