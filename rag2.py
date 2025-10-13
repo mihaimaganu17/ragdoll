@@ -162,6 +162,7 @@ def generate(state: MessagesState):
     response = llm.invoke(prompt)
     return {"messages": [response]}
 
+
 from langgraph.graph import END
 from langgraph.prebuilt import tools_condition
 
